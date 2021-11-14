@@ -1,0 +1,78 @@
+---
+- name: "nexus_installation"
+  hosts: localhost
+  #connection: local
+  user: root
+  become: yes
+    
+  tasks:
+    - name: Install openjdk
+      apt:
+        name: openjdk-8-jre-headless
+        state: present
+        update_cache: yes
+        
+    - name: Add user 'nexus'
+      ansible.builtin.user:
+        name: nexus
+        create_home: yes
+
+    - name:  Crate app dir
+      ansible.builtin.file:
+        state: directory
+        path: /app
+        owner: nexus
+        group: nexus
+        mode: u=rwx,g=rwx,o=rwx
+        
+    - name: Install and unarchive nexus
+      ansible.builtin.unarchive:
+        src: https://download.sonatype.com/nexus/3/latest-unix.tar.gz
+        dest: /app
+        remote_src: yes
+        mode: u=rwx,g=rwx,o=rwx
+
+    - name: Rename file to nexus
+      ansible.builtin.copy:
+        src: /app/nexus-3.36.0-01/
+        dest: /app/nexus
+        owner: nexus
+        group: nexus
+        mode: u=rwx,g=rwx,o=rwx    
+        
+    - name: Add nexus user to the file
+      ansible.builtin.lineinfile:
+        state: present
+        path: /app/nexus/bin/nexus.rc
+        regexp: '^run_as_user='
+        line: run_as_user="nexus"  
+        
+    - name: Create nexus systemd file
+      copy:
+        dest: "/etc/systemd/system/nexus.service"
+        content: |
+          [Unit]
+          Description=nexus service
+          After=network.target
+
+          [Service]
+          Type=forking
+          LimitNOFILE=65536
+          User=nexus
+          Group=nexus
+          ExecStart=/app/nexus/bin/nexus start
+          ExecStop=/app/nexus/bin/nexus stop
+          User=nexus
+          Restart=on-abort
+
+          [Install]
+          WantedBy=multi-user.target
+
+    - name: Reload daemon 
+      systemd:
+        daemon_reload: yes      
+
+    - name: Start nexus
+      ansible.builtin.service:
+        name: nexus
+        state: started    
